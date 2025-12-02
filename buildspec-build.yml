@@ -1,0 +1,46 @@
+version: 0.2
+
+env:
+  variables:
+    AWS_REGION: "us-east-1"
+    AWS_ACCOUNT_ID: "891377356702"
+    IMAGE_REPO_NAME: "project7"
+    IMAGE_TAG: "latest"
+    ECS_CLUSTER_NAME: "ml-ci-cd-cluster"
+    ECS_SERVICE_NAME: "ml-api-staging"
+
+phases:
+  pre_build:
+    commands:
+      - echo "===> Login en ECR"
+      - aws --version
+      - aws ecr get-login-password --region $AWS_REGION \
+        | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+      - echo "===> Variables de imagen"
+      - IMAGE_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+      - echo "IMAGE_URI=$IMAGE_URI"
+
+  build:
+    commands:
+      - echo "===> Construyendo imagen Docker"
+      - docker build -t $IMAGE_REPO_NAME:$IMAGE_TAG .
+      - echo "===> Tagging para ECR"
+      - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $IMAGE_URI
+
+  post_build:
+    commands:
+      - echo "===> Push a ECR"
+      - docker push $IMAGE_URI
+      - echo "===> Forzando nuevo deployment en ECS (staging)"
+      - aws ecs update-service \
+          --cluster $ECS_CLUSTER_NAME \
+          --service $ECS_SERVICE_NAME \
+          --force-new-deployment \
+          --region $AWS_REGION
+      - echo "===> Despliegue solicitado a ECS"
+
+artifacts:
+  files:
+    - "app/**"
+    - "Dockerfile"
+    - "buildspec-build.yml"
